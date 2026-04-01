@@ -1,2 +1,2 @@
-# dynamic_MPE
-replication code for dynamic MPE work. 
+# dynamic MPE
+Replication code for dynamic MPE work. 
