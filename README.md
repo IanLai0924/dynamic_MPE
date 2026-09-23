@@ -1,187 +1,104 @@
-# dynamic_MPE
+# Dynamic marginal policy effects
 
-Replication notebooks for **Estimating Dynamic Marginal Policy Effects under Sequential Unconfoundedness**.
+Replication code for [Estimating Dynamic Marginal Policy Effects under Sequential Unconfoundedness](https://arxiv.org/abs/2604.05639), by I-han Lai and Stefan Wager.
 
-This repository contains simulation code for estimating **dynamic marginal policy effects (MPEs)**: the local change in discounted welfare induced by a small perturbation of a baseline dynamic policy. The implemented experiments focus on continuous-action **location shifts**, where actions or prices are nudged upward.
+The notebooks study how small changes to a dynamic policy affect long-term welfare. They cover a hidden-state benchmark and a dynamic pricing experiment with unobserved customer heterogeneity and reference-price effects.
 
-## Contents
+## Notebooks
 
-| File | Description |
-|---|---|
-| `T=2 .ipynb` | Hidden-state benchmark with horizon `T = 2`. Note the space before `.ipynb`. |
-| `T=3.ipynb` | Hidden-state benchmark with horizon `T = 3`. |
-| `T=5.ipynb` | Hidden-state benchmark with horizon `T = 5`. |
-| `T=10.ipynb` | Hidden-state benchmark with horizon `T = 10`. |
-| `simulator.ipynb` | Dynamic pricing simulator with hidden customer heterogeneity and latent reference-price effects. |
+- [T = 2](T%3D2%20.ipynb): hidden-state benchmark with two periods.
+- [T = 3](T%3D3.ipynb): hidden-state benchmark with three periods.
+- [T = 5](T%3D5.ipynb): hidden-state benchmark with five periods.
+- [T = 10](T%3D10.ipynb): hidden-state benchmark with ten periods.
+- [Dynamic pricing](simulator.ipynb): a bounded-price experiment with eight periods.
 
-The `T=...` notebooks reproduce the hidden-state simulation experiment. `simulator.ipynb` reproduces the dynamic pricing experiment.
+Each notebook is self-contained and generates its own simulated data. The filename `T=2 .ipynb` includes a space before `.ipynb`; keep the quotes when opening it from the command line.
 
 ## Setup
+
+The notebooks were saved with Python 3.11.5. To create an environment and install the required packages:
 
 ```bash
 git clone https://github.com/IanLai0924/dynamic_MPE.git
 cd dynamic_MPE
 
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 python -m pip install --upgrade pip
-python -m pip install numpy pandas scipy scikit-learn torch matplotlib joblib threadpoolctl jupyterlab
-```
+python -m pip install numpy scipy scikit-learn torch matplotlib joblib threadpoolctl jupyterlab
 
-Then start Jupyter:
-
-```bash
-jupyter lab
-```
-
-The notebooks run on CPU. A CUDA-enabled PyTorch installation is recommended for larger Monte Carlo runs.
-
-## Quick start
-
-Open one notebook and run it cell by cell. For example:
-
-```bash
 jupyter lab "T=2 .ipynb"
 ```
 
-or:
+On Windows, activate the environment with `.venv\Scripts\activate` instead.
 
-```bash
-jupyter lab simulator.ipynb
-```
+## Running the experiments
 
-For a first smoke test, reduce the Monte Carlo and training settings inside the notebook:
+### Start with a small run
+
+In `T=2 .ipynb`, run the **first code cell only** to load the definitions. Then add a new cell with the following example:
 
 ```python
+dgp = POMDPConfig(T=2, p=5)
 learner = LearnerConfig(
+    hidden_dim_q=32,
+    hidden_dim_h=32,
     epochs_q=5,
     epochs_h=5,
-    batch_size_q=256,
-    batch_size_h=256,
 )
-
 mc = MonteCarloConfig(
     N=500,
     R=2,
     n_folds=2,
     oracle_mc=10_000,
     n_jobs=1,
+    make_histograms=False,
 )
+
+results = run_monte_carlo(dgp=dgp, learner=learner, mc=mc)
 ```
 
-After the smoke test succeeds, increase `N`, `R`, `oracle_mc`, `n_folds`, `epochs_q`, and `epochs_h` for paper-scale runs.
+This is a setup check, not a configuration for comparing estimator performance. The remaining cells launch larger experiments, so use **Run All** only when you intend to run every configuration.
 
-## Hidden-state benchmark
+### Run the full experiments
 
-Use the horizon-specific notebooks:
+**Hidden-state benchmark.** After the definitions cell, each horizon notebook contains six experiment cells covering sample sizes `N = 1000, 2000, 5000` and state dimensions `p = 5, 10`. These cells use 1,000 replications and five cross-fitting folds. Run the configurations you need.
 
-```text
-T=2 .ipynb
-T=3.ipynb
-T=5.ipynb
-T=10.ipynb
-```
+**Dynamic pricing.** Open `simulator.ipynb`. Its first cell defines the simulation and estimators; the second runs the experiment and plots the results. The supplied run uses `T = 8`, `N = 5000`, 500 replications, and five folds. Reduce the settings in that cell for an initial check.
 
-These notebooks simulate a partially observed dynamic system with observed histories, continuous actions, rewards, and an unobserved latent regime. The feasible estimators only use the observed histories, actions, and rewards.
+Both experiments report bias, RMSE, and confidence-interval coverage. The hidden-state notebooks also produce histograms; the pricing notebook produces histograms and boxplots.
 
-Main objects:
+### Adjust the configuration
 
-| Object | Purpose |
-|---|---|
-| `POMDPConfig` | Data-generating process, horizon, state dimension, discount factor, policy, rewards, and transitions. |
-| `LearnerConfig` | Neural-network architecture and optimization settings for the value and score learners. |
-| `MonteCarloConfig` | Sample size, replications, folds, oracle finite-difference settings, and parallelism. |
+- `POMDPConfig` or `PricingDGPConfig` controls the data-generating process.
+- `LearnerConfig` controls the neural networks and their training settings.
+- `MonteCarloConfig` controls sample size, replications, cross-fitting, oracle approximation, and parallelism.
 
-Main functions:
+Full runs train neural networks within each replication and fold. To reduce runtime or memory use, start with smaller `N`, `R`, `oracle_mc`, network widths, and epoch counts, and set `n_jobs=1`.
 
-| Function | Purpose |
-|---|---|
-| `generate_pomdp_benchmark(...)` | Simulates trajectories under the baseline or shifted policy. |
-| `estimate_oracle_theta_fd(...)` | Approximates the true MPE by central finite differences. |
-| `estimate_mpe_crossfit(...)` | Computes Direct, SRW, ASRW, and oracle-score ASRW using cross-fitting. |
-
-Typical outputs are bias, RMSE, standard errors, and confidence-interval coverage for each estimator.
-
-## Dynamic pricing simulator
-
-Use:
-
-```text
-simulator.ipynb
-```
-
-This notebook simulates a platform that posts bounded prices over time. Demand depends on current price, seasonality, hidden willingness to pay, a hidden reference price, and a persistent latent taste shock.
-
-The baseline policy is a clipped Gaussian pricing rule. The target MPE is the effect of locally shifting the pricing rule upward before clipping.
-
-Main objects:
-
-| Object | Purpose |
-|---|---|
-| `PricingDGPConfig` | Pricing DGP, price bounds, latent heterogeneity, demand model, reference-price dynamics, and discounting. |
-| `LearnerConfig` | Neural-network and optimizer settings. |
-| `MonteCarloConfig` | Sample size, replications, folds, oracle sample size, and parallelism. |
-
-Typical outputs are an estimator comparison table and sampling-distribution plots.
+The code supports CPU execution. The hidden-state notebooks select CUDA when available. In the pricing notebook, CUDA is used only when available, `use_cuda_when_possible=True`, and `n_jobs=1`; parallel runs use CPU workers.
 
 ## Estimators
 
-For each period `t`, the notebooks estimate:
+The experiments compare four estimators:
 
-```text
-q_t(S_t, A_t) = E[Gamma_t | S_t, A_t]
-```
+- **Direct:** a plug-in estimator based on estimated continuation values.
+- **SRW:** score reweighting.
+- **ASRW:** augmented score reweighting, the feasible doubly robust estimator.
+- **ASRW with oracle score:** a benchmark using the known policy score in the simulated design.
 
-where `Gamma_t` is the discounted outcome from period `t` onward. For the continuous location-shift experiments, the direct operator is the action derivative:
-
-```text
-L_t q_t(S_t, A_t) = partial q_t(S_t, A_t) / partial A_t.
-```
-
-The implemented estimators are:
-
-```text
-Direct = mean_i sum_t gamma^(t-1) * d q_hat_t(S_it, A_it) / d A_it
-
-SRW    = mean_i sum_t gamma^(t-1) * H_hat_t(S_it, A_it) * Gamma_it
-
-ASRW   = Direct
-         + mean_i sum_t gamma^(t-1) * H_hat_t(S_it, A_it)
-           * {Gamma_it - q_hat_t(S_it, A_it)}
-```
-
-`ASRW` is the main feasible doubly robust estimator. `ASRW (oracle score)` replaces the learned score with the known analytic score in the simulated designs and is included only as a benchmark.
-
-## Reproducing the paper experiments
-
-For the hidden-state benchmark, run the four horizon notebooks over the desired combinations of:
-
-```text
-N in {1000, 2000, 5000}
-p in {5, 10}
-```
-
-For the pricing experiment, run `simulator.ipynb` with the default pricing DGP and `N = 5000`.
-
-Full replication is computationally expensive because each Monte Carlo replication trains neural networks inside cross-fitting folds. Start small, verify the workflow, then scale up.
-
-## Troubleshooting
-
-**`T=2 .ipynb` does not open from the shell.** The filename contains a space before `.ipynb`; quote it:
-
-```bash
-jupyter lab "T=2 .ipynb"
-```
-
-**The run is slow.** Reduce `N`, `R`, `oracle_mc`, `n_folds`, `epochs_q`, and `epochs_h` while debugging.
-
-**Memory usage is high.** Reduce `N`, batch sizes, network widths, or `n_jobs`.
-
-**The score learner is unstable.** Use a smooth activation such as `silu` or `gelu`; derivative-based score learning is less stable with ReLU.
+The oracle target is approximated by finite differences. See the [paper](https://arxiv.org/abs/2604.05639) for the identification results, assumptions, and estimator definitions.
 
 ## Citation
 
-```text
-Lai, I-han, and Stefan Wager. Estimating Dynamic Marginal Policy Effects under Sequential Unconfoundedness. 2026.
+```bibtex
+@misc{lai2026dynamicmpe,
+  title         = {Estimating Dynamic Marginal Policy Effects under Sequential Unconfoundedness},
+  author        = {Lai, I-han and Wager, Stefan},
+  year          = {2026},
+  eprint        = {2604.05639},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2604.05639}
+}
 ```
